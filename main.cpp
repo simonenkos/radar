@@ -6,19 +6,19 @@
 #include <math.h>
 #include <set>
 
-#define EARTH_RADIUS 6371e3
+#define EARTH_RADIUS 6371;
 
 double deg2rad(double deg)
 {
     return (deg * M_PI / 180);
 }
 
-double distance(double lat1d, double lon1d, double lat2d, double lon2d)
+double distance(double lat1, double lon1, double lat2, double lon2)
 {
-    double dlon = deg2rad(lon2d - lon1d);
-    double dlat = deg2rad(lat2d - lat1d);
-    double a = (sin(dlat / 2) * sin(dlat / 2)) + cos(deg2rad(lat1d)) *
-                cos(deg2rad(lat2d)) * (sin(dlon / 2) *sin(dlon / 2));
+    double dlon = deg2rad(lon2 - lon1);
+    double dlat = deg2rad(lat2 - lat1);
+    double a = (sin(dlat / 2) * sin(dlat / 2)) + cos(deg2rad(lat1)) *
+                cos(deg2rad(lat2)) * (sin(dlon / 2) *sin(dlon / 2));
     double angle = 2 * atan2(sqrt(a), sqrt(1 - a));
     return angle * EARTH_RADIUS;
 }
