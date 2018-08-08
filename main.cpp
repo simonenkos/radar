@@ -8,7 +8,8 @@
 #include <set>
 #include <math.h>
 
-#define EARTH_RADIUS 6371;
+constexpr double EARTH_RADIUS       = 6371;
+constexpr size_t PROCESS_BLOCK_SIZE = 100;
 
 double deg2rad(double deg)
 {
@@ -23,6 +24,39 @@ double distance(double lat1, double lon1, double lat2, double lon2)
                 cos(deg2rad(lat2)) * (sin(dlon / 2) *sin(dlon / 2));
     double angle = 2 * atan2(sqrt(a), sqrt(1 - a));
     return angle * EARTH_RADIUS;
+}
+
+using min_distance_result_t = std::vector<std::pair<size_t, double>>;
+using min_distance_future_t = std::future<min_distance_result_t>;
+
+min_distance_result_t calculate_min_distance(std::vector<double> const & latitudes,
+                                             std::vector<double> const & longtitudes,
+                                             size_t beg,
+                                             size_t end)
+{
+    min_distance_result_t result;
+
+    for (size_t cur = beg; (cur < end) && (cur < latitudes.size()); ++cur)
+    {
+        double min_distance = std::numeric_limits<double>::max();
+        size_t min_distance_number;
+
+        for (size_t idx = 0; idx < latitudes.size(); ++idx)
+        {
+            if (idx == cur) continue;
+
+            double cur_distance = distance(latitudes[cur], longtitudes[cur],
+                                           latitudes[idx], longtitudes[idx]);
+
+            if (min_distance > cur_distance)
+            {
+                min_distance = cur_distance;
+                min_distance_number = idx;
+            }
+        }
+        result.push_back({ min_distance_number, min_distance });
+    }
+    return result;
 }
 
 int main()
@@ -60,60 +94,44 @@ int main()
             longtitudes.push_back(std::stod(longtitude));
         }
 
-        using min_distance_result_t = std::pair<size_t, double>;
-        std::vector<std::future<min_distance_result_t>> min_distance_calculators;
+        std::vector<min_distance_future_t> min_distance_calculators;
 
         std::cout << "Processed CSV file '" << file_name << "':" << std::endl;
 
-        for (size_t i = 0; i < flights.size(); ++i)
+        for (size_t i = 0; i < flights.size(); i += PROCESS_BLOCK_SIZE)
         {
-            auto find_min_distance = [&flights,
-                                      &latitudes,
-                                      &longtitudes](size_t cur) -> std::pair<size_t, double>
-            {
-                double min_distance = std::numeric_limits<double>::max();
-                size_t min_distance_number;
-
-                for (size_t idx = 0; idx < flights.size(); ++idx)
-                {
-                    if (idx == cur) continue;
-
-                    double cur_distance = distance(latitudes[cur], longtitudes[cur],
-                                                   latitudes[idx], longtitudes[idx]);
-
-                    if (min_distance > cur_distance)
-                    {
-                        min_distance = cur_distance;
-                        min_distance_number = idx;
-                    }
-                }
-
-                return { min_distance_number, min_distance };
-            };
-
             min_distance_calculators.emplace(min_distance_calculators.end(),
-                                             std::async(std::launch::async, find_min_distance, i));
+                                             std::async(std::launch::async,
+                                                        calculate_min_distance,
+                                                        latitudes,
+                                                        longtitudes, i, i + PROCESS_BLOCK_SIZE));
         }
 
         for (size_t i = 0; i < min_distance_calculators.size(); ++i)
         {
-            auto result = min_distance_calculators[i].get();
-            auto it     = distance_map.find(flights[i]);
+            auto results    = min_distance_calculators[i].get();
+            auto flight_idx = i * PROCESS_BLOCK_SIZE;
 
-            if (distance_map.end() == it)
+            for (auto const & result : results)
             {
-                std::pair<std::string, double> closest { flights[result.first],
-                                                         result.second };
-                it = distance_map.insert({ flights[i], std::move(closest) }).first;
-            }
-            else if (it->second.first != flights[result.first])
-            {
-                it->second = { flights[result.first], result.second };
-            }
+                auto it = distance_map.find(flights[flight_idx]);
 
-            std::cout << it->first << ' '
-                      << it->second.first << ' '
-                      << it->second.second << std::endl;
+                if (distance_map.end() == it)
+                {
+                    std::pair<std::string, double> closest { flights[result.first],
+                                                             result.second };
+                    it = distance_map.insert({ flights[flight_idx], std::move(closest) }).first;
+                }
+                else if (it->second.first != flights[result.first])
+                {
+                    it->second = { flights[result.first], result.second };
+                }
+
+                std::cout << it->first << ' '
+                          << it->second.first << ' '
+                          << it->second.second << std::endl;
+                ++flight_idx;
+            }
         }
     }
     return 0;
